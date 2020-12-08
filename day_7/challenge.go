@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"log"
 	"os"
 	"regexp"
@@ -9,16 +10,22 @@ import (
 	"strings"
 )
 
+const shinyGold = "shiny gold"
+
+type graph struct {
+	vertices map[string]*vertex
+}
+
 type vertex struct {
 	val         string
-	parentEdges []edge
-	childEdges  []edge
+	parentEdges []*edge
+	childEdges  []*edge
 }
 
 type edge struct {
-	parent *vertex
-	child   *vertex
-	weight  int
+	from   *vertex
+	to     *vertex
+	weight int
 }
 
 func main() {
@@ -29,9 +36,13 @@ func main() {
 
 	scanner := bufio.NewScanner(file)
 
-	treeMap := map[string]*vertex{}
+	graph := graph{vertices: map[string]*vertex{}}
 	for scanner.Scan() {
 		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+
 		splits := strings.Split(line, " bags contain ")
 		if len(splits) < 2 {
 			log.Fatalf("invalid line in input: %vert", line)
@@ -39,34 +50,102 @@ func main() {
 
 		val := splits[0]
 
-		vert := &vertex{val: val}
-		_, ok := treeMap[val]
-		if strings.HasPrefix(splits[1], "contain no other") && !ok {
-			treeMap[val] = vert
+		vert := setVertex(graph, val)
+
+		if strings.HasPrefix(splits[1], "no other") {
+			continue
 		}
 
-		regex := regexp.MustCompile("\\sbag[s]*[.,]*\\s*")
-		childrenStr := strings.Split(splits[1], "bag")
-		for _, childStr := range childrenStr {
-			weight, err := strconv.Atoi(string(childStr[0]))
-			if err != nil {
-				log.Fatalf("failed to parse num of child str: %vert", childStr[0])
+		for _, childStr := range childStrings(splits) {
+			if childStr == "" {
+				continue
 			}
 
-			childVal := childStr[1:]
+			weight := parseWeight(childStr)
 
-			matchingVertex, exists := treeMap[childVal]
+			childVal := parseVertexName(childStr)
+
+			match, exists := graph.vertices[childVal]
 			if !exists {
-				childVertex := &vertex{
+				// create vertex
+				match = &vertex{
 					val: childVal,
-					parentEdges: []edge{{
-						parent: vert,
-						child:
-					}},
 				}
 
-				childVertex
+				graph.vertices[match.val] = match
 			}
+
+			// create parent edge
+			parentEdge := &edge{
+				from:   match,
+				to:     vert,
+				weight: weight,
+			}
+
+			// create child edge
+			childEdge := &edge{
+				from:   vert,
+				to:     match,
+				weight: weight,
+			}
+
+			match.parentEdges = append(match.parentEdges, parentEdge)
+			vert.childEdges = append(vert.childEdges, childEdge)
 		}
+
 	}
+
+	calculateParentEdges(graph.vertices[shinyGold].parentEdges)
+	fmt.Printf("ADVENT OF CODE DAY 7 FIRST: %v\n", len(hits))
+
+	result := calculateChildEdges(graph.vertices[shinyGold], 0)
+	fmt.Printf("ADVENT OF CODE DAY 7 SECOND: %v\n", result)
+}
+
+var hits = make(map[string]bool)
+
+func calculateParentEdges(edges []*edge) {
+	for _, edge := range edges {
+		hits[edge.to.val] = true
+		calculateParentEdges(edge.to.parentEdges)
+	}
+}
+
+func calculateChildEdges(v *vertex, count int) int {
+	for _, edge := range v.childEdges {
+		count++
+		count *= edge.weight
+		count = calculateChildEdges(edge.to, count)
+	}
+
+	return count
+}
+
+func parseVertexName(childStr string) string {
+	childVal := childStr[2:]
+	return childVal
+}
+
+func parseWeight(childStr string) int {
+	weight, err := strconv.Atoi(string(childStr[0]))
+	if err != nil {
+		log.Fatalf("failed to parse num of child str: %vert", childStr[0])
+	}
+	return weight
+}
+
+func childStrings(splits []string) []string {
+	regex := regexp.MustCompile("\\sbag[s]*[.,]*\\s*")
+
+	childrenStr := regex.Split(splits[1], -1)
+	return childrenStr
+}
+
+func setVertex(graph graph, val string) *vertex {
+	vert, ok := graph.vertices[val]
+	if !ok {
+		vert = &vertex{val: val}
+		graph.vertices[val] = vert
+	}
+	return vert
 }
